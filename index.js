@@ -201,3 +201,46 @@ app.post('/api/createMateria', async (req, res) => {
     res.status(500).json({ message: "Error al registrar la materia", error: error.message });
   }
 });
+
+// ============================================================================
+//     ENDPOINTS DE MATERIAS
+// ============================================================================
+
+// 1. Obtiene el catálogo completo de todas las materias registradas ordenadas por ID
+app.get('/api/getMaterias', async (req, res) => {
+  try {
+    const resultado = await pool.query('SELECT * FROM materia ORDER BY id ASC');
+    res.status(200).json({
+      message: "Materias consultadas correctamente",
+      data: resultado.rows
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener las materias", error: error.message });
+  }
+});
+
+// 2. Registra una nueva materia en el catálogo validando sus campos obligatorios y numéricos
+app.post('/api/createMateria', async (req, res) => {
+  try {
+    const { nombre, semestre, creditos } = req.body;
+// Validación de campos obligatorios
+    if (!nombre || nombre.trim() === "") {
+      return res.status(400).json({ message: "El nombre de la materia es requerido y no puede ir vacío" });
+    }
+    if (!semestre || !creditos || isNaN(creditos)) {
+      return res.status(400).json({ message: "El semestre y los créditos (numéricos) son requeridos" });
+    }
+
+    const resultado = await pool.query(
+      'INSERT INTO materia (nombre, semestre, creditos) VALUES ($1, $2, $3) RETURNING *',
+      [nombre, semestre, creditos]
+    );
+
+    res.status(201).json({
+      message: "Materia creada correctamente",
+      data: resultado.rows[0]
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error al registrar la materia", error: error.message });
+  }
+});
