@@ -244,3 +244,50 @@ app.post('/api/createMateria', async (req, res) => {
     res.status(500).json({ message: "Error al registrar la materia", error: error.message });
   }
 });
+
+// 3. Cuenta la cantidad total de materias asignadas a un alumno usando la función agregada COUNT de SQL
+app.get('/api/getMateriasCountByAlumnoId/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ message: "El ID provisto no es numérico" });
+    }
+// Verificar estatus del alumno
+    const alumnoCheck = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [id]);
+    if (alumnoCheck.rows.length === 0) {
+      return res.status(404).json({ message: "El alumno solicitado no existe o no está activo" });
+    }
+// Contar registros asociados en la tabla intermedia
+    const resultado = await pool.query(
+      'SELECT COUNT(*)::INT as total_materias FROM alumno_materia WHERE alumno_id = $1',
+      [id]
+    );
+
+    res.status(200).json({
+      message: "Conteo de materias realizado con éxito",
+      data: {
+        total_materias: resultado.rows[0].total_materias
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error al calcular el conteo de materias", error: error.message });
+  }
+});
+
+// ============================================================================
+//     ENDPOINTS DE VEHÍCULOS (MongoDB usando el ODM Mongoose)
+// ============================================================================
+
+// 1. Obtiene todos los documentos guardados dentro de la colección de vehículos en MongoDB
+app.get("/api/getVehiculos", async (req, res) => {
+  try {
+    const vehiculos = await Vehiculo.find();
+    res.status(200).json({
+      message: "Vehículos consultados correctamente desde MongoDB",
+      data: vehiculos,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error al consultar la colección de vehículos", error: error.message });
+  }
+});
