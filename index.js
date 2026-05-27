@@ -291,3 +291,27 @@ app.get("/api/getVehiculos", async (req, res) => {
     res.status(500).json({ message: "Error al consultar la colección de vehículos", error: error.message });
   }
 });
+
+// 2. Crea de forma persistente un nuevo documento de vehículo en la base de datos de MongoDB
+app.post("/api/createVehiculo", async (req, res) => {
+  try {
+    const { marca, modelo, anio, color } = req.body;
+// Validar propiedades necesarias
+    if (!marca || !modelo || !anio || !color) {
+      return res.status(400).json({ message: "Los campos marca, modelo, anio y color son mandatorios en el Body" });
+    }
+    if (isNaN(anio)) {
+      return res.status(400).json({ message: "El campo 'anio' debe ser numérico" });
+    }
+
+    const nuevoVehiculo = new Vehiculo({ marca, modelo, anio, color });
+    await nuevoVehiculo.save();
+
+    res.status(201).json({
+      message: "Vehículo guardado de forma persistente en MongoDB",
+      data: nuevoVehiculo,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error interno al guardar en MongoDB", error: error.message });
+  }
+});
