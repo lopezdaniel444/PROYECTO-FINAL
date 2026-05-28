@@ -1,7 +1,7 @@
 const express = require('express');
 const pool = require('./db');
-const connectMongoDB = require("./mongoConnection");
-const Vehiculo = require("./Vehiculo");
+const connectMongoDB = require("./mongoConnection"); 
+const Vehiculo = require("./Vehiculo"); 
 
 const app = express();
 app.use(express.json());
@@ -19,10 +19,11 @@ app.get('/', (req, res) => {
 // 1. Obtiene la lista de todos los alumnos que están activos en el sistema (is_active = true)
 app.get('/api/getAlumnos', async (req, res) => {
   try {
-    const resultadoConsulta = await pool.query('SELECT * FROM alumno WHERE is_active = true');
+    // Lectura de datos filtrada por estado lógico activo
+    const resultado = await pool.query('SELECT * FROM alumno WHERE is_active = true');
     res.status(200).json({
       message: "Alumnos consultados correctamente",
-      data: resultadoConsulta.rows
+      data: resultado.rows // .rows contiene el arreglo de registros devueltos por PostgreSQL
     });
   } catch (error) {
     res.status(500).json({ message: "Error en el servidor al consultar alumnos", error: error.message });
@@ -32,21 +33,24 @@ app.get('/api/getAlumnos', async (req, res) => {
 // 2. Busca un alumno específico por su ID, validando que sea numérico y que el alumno esté activo
 app.get('/api/getAlumnoById/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    // Validación: Que sea numérico
+    const { id } = req.params; // Extracción de parámetros de la URL (:id)
+    
+    // Validación de seguridad: Previene errores de sintaxis en la consulta SQL
     if (!id || isNaN(id)) {
       return res.status(400).json({ message: "El ID del alumno debe ser numérico y obligatorio" });
     }
 
-    const resultadoConsulta = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [id]);
+    // Consulta parametrizada ($1) para evitar ataques de Inyección SQL
+    const resultado = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [id]);
 
-    if (resultadoConsulta.rows.length === 0) {
+    // Validación de existencia: Si el arreglo está vacío, el recurso no existe
+    if (resultado.rows.length === 0) {
       return res.status(404).json({ message: "Alumno no encontrado o se encuentra inactivo" });
     }
 
     res.status(200).json({
       message: "Alumno encontrado correctamente",
-      data: resultadoConsulta.rows[0]
+      data: resultado.rows[0] // Se retorna solo el primer objeto del arreglo
     });
   } catch (error) {
     res.status(500).json({ message: "Error en el servidor al obtener el alumno", error: error.message });
@@ -56,21 +60,23 @@ app.get('/api/getAlumnoById/:id', async (req, res) => {
 // 3. Busca alumnos cuyo nombre o apellido coincida parcialmente con el texto usando LIKE
 app.get('/api/searchAlumno', async (req, res) => {
   try {
-    const { query } = req.query;
-    // Validación: Que exista la query de búsqueda y no esté vacía
+    const { query } = req.query; // Extracción de parámetros de búsqueda de la URL (?query=texto)
+    
     if (!query || query.trim() === "") {
       return res.status(400).json({ message: "El parámetro de búsqueda 'query' es obligatorio y no puede ir vacío" });
     }
-    // Búsqueda insensible a mayúsculas/minúsculas usando ILIKE (o LIKE con % de coincidencia parcial)
-    const textoBusqueda = `%${query}%`;
-    const resultadoConsulta = await pool.query(
+    
+    // El comodín % permite coincidir con cualquier texto antes o después del string
+    const busqueda = `%${query}%`;
+    // ILIKE realiza una búsqueda insensible a mayúsculas y minúsculas
+    const resultado = await pool.query(
       'SELECT * FROM alumno WHERE (nombre ILIKE $1 OR apellido ILIKE $1) AND is_active = true',
-      [textoBusqueda]
+      [busqueda]
     );
 
     res.status(200).json({
       message: `Búsqueda completada para: '${query}'`,
-      data: resultadoConsulta.rows
+      data: resultado.rows
     });
   } catch (error) {
     res.status(500).json({ message: "Error en el servidor durante la búsqueda", error: error.message });
@@ -80,8 +86,8 @@ app.get('/api/searchAlumno', async (req, res) => {
 // 4. Registra un nuevo alumno en la base de datos con estado activo por defecto
 app.post('/api/createAlumno', async (req, res) => {
   try {
-    const { nombre, apellido, edad, correo } = req.body;
-    // Validación: Campos obligatorios y tipos de datos básicos
+    const { nombre, apellido, edad, correo } = req.body; // Extracción del payload enviado por el cliente
+    
     if (!nombre || !apellido || !edad || !correo) {
       return res.status(400).json({ message: "Todos los campos (nombre, apellido, edad, correo) son obligatorios" });
     }
@@ -89,14 +95,15 @@ app.post('/api/createAlumno', async (req, res) => {
       return res.status(400).json({ message: "La edad debe ser un valor numérico" });
     }
 
-    const resultadoConsulta = await pool.query(
+    // Clausula RETURNING *: Devuelve inmediatamente las columnas del registro recién creado
+    const resultado = await pool.query(
       'INSERT INTO alumno (nombre, apellido, edad, correo, is_active) VALUES ($1, $2, $3, $4, true) RETURNING *',
       [nombre, apellido, edad, correo]
     );
 
-    res.status(201).json({
+    res.status(201).json({ 
       message: "Alumno creado correctamente",
-      data: resultadoConsulta.rows[0]
+      data: resultado.rows[0]
     });
   } catch (error) {
     res.status(500).json({ message: "Error al crear el alumno", error: error.message });
@@ -108,34 +115,36 @@ app.put('/api/updateAlumno/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { nombre, apellido, edad, correo } = req.body;
-    // Validaciones de ID
+    
     if (!id || isNaN(id)) {
       return res.status(400).json({ message: "El ID provisto debe ser numérico" });
     }
     if (!nombre || !apellido || !edad || !correo) {
       return res.status(400).json({ message: "Faltan datos en el cuerpo para realizar la modificación" });
     }
-    // Verificar existencia del alumno activo
-    const verificarAlumno = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [id]);
-    if (verificarAlumno.rows.length === 0) {
+    
+    // Verificación previa: Asegura que el recurso exista antes de intentar modificarlo
+    const verificar = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [id]);
+    if (verificar.rows.length === 0) {
       return res.status(404).json({ message: "El alumno no existe o está inactivo" });
     }
-    // Actualización de datos
-    const resultadoConsulta = await pool.query(
+    
+    // Ejecución de la actualización de datos (Modificación total)
+    const resultado = await pool.query(
       'UPDATE alumno SET nombre = $1, apellido = $2, edad = $3, correo = $4 WHERE id = $5 RETURNING *',
       [nombre, apellido, edad, correo, id]
     );
 
     res.status(200).json({
       message: "Alumno modificado correctamente",
-      data: resultadoConsulta.rows[0]
+      data: resultado.rows[0]
     });
   } catch (error) {
     res.status(500).json({ message: "Error al actualizar datos del alumno", error: error.message });
   }
 });
 
-// 6. Desactiva a un alumno del sistema (baja lógica) cambiando su estado 'is_active' a false sin borrarlo de la BD
+// 6. Desactiva a un alumno del sistema (borrado lógico) cambiando su estado 'is_active' a false sin borrarlo de la base de datos
 app.delete('/api/deleteAlumno/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -143,12 +152,13 @@ app.delete('/api/deleteAlumno/:id', async (req, res) => {
     if (!id || isNaN(id)) {
       return res.status(400).json({ message: "El ID debe ser numérico" });
     }
-    // Validar si el alumno existe y sigue activo
-    const verificarAlumno = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [id]);
-    if (verificarAlumno.rows.length === 0) {
+    
+    const verificar = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [id]);
+    if (verificar.rows.length === 0) {
       return res.status(404).json({ message: "El alumno no existe o ya ha sido eliminado previamente" });
     }
-    // Eliminación lógica cambiando is_active a false
+    
+    // Patrón de diseño "Borrado logico": Preserva la integridad referencial histórica en la base de datos
     await pool.query('UPDATE alumno SET is_active = false WHERE id = $1', [id]);
 
     res.status(200).json({
@@ -166,10 +176,11 @@ app.delete('/api/deleteAlumno/:id', async (req, res) => {
 // 1. Obtiene el catálogo completo de todas las materias registradas ordenadas por ID
 app.get('/api/getMaterias', async (req, res) => {
   try {
-    const resultadoConsulta = await pool.query('SELECT * FROM materia ORDER BY id ASC');
+    // Clausula ORDER BY: Ordenamiento explícito para mantener consistencia visual en el cliente
+    const resultado = await pool.query('SELECT * FROM materia ORDER BY id ASC');
     res.status(200).json({
       message: "Materias consultadas correctamente",
-      data: resultadoConsulta.rows
+      data: resultado.rows
     });
   } catch (error) {
     res.status(500).json({ message: "Error al obtener las materias", error: error.message });
@@ -180,7 +191,7 @@ app.get('/api/getMaterias', async (req, res) => {
 app.post('/api/createMateria', async (req, res) => {
   try {
     const { nombre, semestre, creditos } = req.body;
-    // Validación de campos obligatorios
+    
     if (!nombre || nombre.trim() === "") {
       return res.status(400).json({ message: "El nombre de la materia es requerido y no puede ir vacío" });
     }
@@ -188,14 +199,14 @@ app.post('/api/createMateria', async (req, res) => {
       return res.status(400).json({ message: "El semestre y los créditos (numéricos) son requeridos" });
     }
 
-    const resultadoConsulta = await pool.query(
+    const resultado = await pool.query(
       'INSERT INTO materia (nombre, semestre, creditos) VALUES ($1, $2, $3) RETURNING *',
       [nombre, semestre, creditos]
     );
 
     res.status(201).json({
       message: "Materia creada correctamente",
-      data: resultadoConsulta.rows[0]
+      data: resultado.rows[0]
     });
   } catch (error) {
     res.status(500).json({ message: "Error al registrar la materia", error: error.message });
@@ -203,44 +214,45 @@ app.post('/api/createMateria', async (req, res) => {
 });
 
 // ============================================================================
-//     ENDPOINTS DE RELACIÓN ALUMNO-MATERIA (Relación Muchos a Muchos)
+//     ENDPOINTS DE RELACIÓN ALUMNO-MATERIA (Muchos a Muchos)
 // ============================================================================
 
 // 1. Inscribe a un alumno activo en una materia guardando la relación en la tabla intermedia
 app.post('/api/assignMateriaToAlumno', async (req, res) => {
   try {
-    const { alumnoId, materiaId } = req.body;
-    // Validar parámetros del cuerpo
-    if (!alumnoId || !materiaId || isNaN(alumnoId) || isNaN(materiaId)) {
-      return res.status(400).json({ message: "Los campos 'alumnoId' y 'materiaId' son obligatorios y deben ser numéricos" });
+    const { alumno_id, materia_id } = req.body;
+    
+    if (!alumno_id || !materia_id || isNaN(alumno_id) || isNaN(materia_id)) {
+      return res.status(400).json({ message: "Los campos 'alumno_id' y 'materia_id' son obligatorios y deben ser numéricos" });
     }
-    // Validar que el alumno exista y esté activo
-    const alumnoCheck = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [alumnoId]);
+    // Validación cruzada 1: El alumno debe existir y estar en condiciones (activo)
+    const alumnoCheck = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [alumno_id]);
     if (alumnoCheck.rows.length === 0) {
       return res.status(404).json({ message: "El alumno no existe o no está activo en el sistema" });
     }
-    // Validar que la materia exista
-    const materiaCheck = await pool.query('SELECT * FROM materia WHERE id = $1', [materiaId]);
+    // Validación cruzada 2: La materia de destino debe existir en el catálogo
+    const materiaCheck = await pool.query('SELECT * FROM materia WHERE id = $1', [materia_id]);
     if (materiaCheck.rows.length === 0) {
       return res.status(404).json({ message: "La materia especificada no existe" });
     }
-    // Validar duplicados en la asignación
+    // Validación de unicidad: Previene la duplicación de asignaciones idénticas
     const relacionCheck = await pool.query(
       'SELECT * FROM alumno_materia WHERE alumno_id = $1 AND materia_id = $2',
-      [alumnoId, materiaId]
+      [alumno_id, materia_id]
     );
     if (relacionCheck.rows.length > 0) {
       return res.status(400).json({ message: "Este alumno ya tiene asignada esta materia previamente" });
     }
-    // Realizar la inserción en la tabla intermedia
-    const resultadoConsulta = await pool.query(
+    
+    // Inserción en tabla relacional (vincula llaves foráneas: alumno_id y materia_id)
+    const resultado = await pool.query(
       'INSERT INTO alumno_materia (alumno_id, materia_id) VALUES ($1, $2) RETURNING *',
-      [alumnoId, materiaId]
+      [alumno_id, materia_id]
     );
 
     res.status(201).json({
       message: "Materia asignada al alumno correctamente",
-      data: resultadoConsulta.rows[0]
+      data: resultado.rows[0]
     });
   } catch (error) {
     res.status(500).json({ message: "Error del servidor al asignar la materia", error: error.message });
@@ -255,13 +267,14 @@ app.get('/api/getMateriasByAlumnoId/:id', async (req, res) => {
     if (!id || isNaN(id)) {
       return res.status(400).json({ message: "El ID del alumno debe ser numérico" });
     }
-    // Verificar existencia y estatus del alumno
+    
     const alumnoCheck = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [id]);
     if (alumnoCheck.rows.length === 0) {
       return res.status(404).json({ message: "El alumno solicitado no existe o está dado de baja" });
     }
-    // Consulta con INNER JOIN para traer los datos reales de la materia
-    const resultadoConsulta = await pool.query(
+    
+    // INNER JOIN: Cruza la tabla 'materia' con 'alumno_materia' usando la llave compartida (materia_id)
+    const resultado = await pool.query(
       `SELECT m.id, m.nombre, m.semestre, m.creditos 
        FROM materia m
        INNER JOIN alumno_materia am ON m.id = am.materia_id
@@ -271,7 +284,7 @@ app.get('/api/getMateriasByAlumnoId/:id', async (req, res) => {
 
     res.status(200).json({
       message: `Materias cargadas para el alumno con ID: ${id}`,
-      data: resultadoConsulta.rows
+      data: resultado.rows
     });
   } catch (error) {
     res.status(500).json({ message: "Error al consultar las materias del alumno", error: error.message });
@@ -286,13 +299,14 @@ app.get('/api/getMateriasCountByAlumnoId/:id', async (req, res) => {
     if (!id || isNaN(id)) {
       return res.status(400).json({ message: "El ID provisto no es numérico" });
     }
-    // Verificar estatus del alumno
+    
     const alumnoCheck = await pool.query('SELECT * FROM alumno WHERE id = $1 AND is_active = true', [id]);
     if (alumnoCheck.rows.length === 0) {
       return res.status(404).json({ message: "El alumno solicitado no existe o no está activo" });
     }
-    // Contar registros asociados en la tabla intermedia
-    const resultadoConsulta = await pool.query(
+    
+    // COUNT(*)::INT -> Función agregada de SQL casteada explícitamente a un entero en NodeJS
+    const resultado = await pool.query(
       'SELECT COUNT(*)::INT as total_materias FROM alumno_materia WHERE alumno_id = $1',
       [id]
     );
@@ -300,7 +314,7 @@ app.get('/api/getMateriasCountByAlumnoId/:id', async (req, res) => {
     res.status(200).json({
       message: "Conteo de materias realizado con éxito",
       data: {
-        totalMaterias: resultadoConsulta.rows[0].total_materias
+        total_materias: resultado.rows[0].total_materias
       }
     });
   } catch (error) {
@@ -315,10 +329,11 @@ app.get('/api/getMateriasCountByAlumnoId/:id', async (req, res) => {
 // 1. Obtiene todos los documentos guardados dentro de la colección de vehículos en MongoDB
 app.get("/api/getVehiculos", async (req, res) => {
   try {
-    const todosLosVehiculos = await Vehiculo.find();
+    // .find() actúa como un "SELECT *"
+    const vehiculos = await Vehiculo.find();
     res.status(200).json({
       message: "Vehículos consultados correctamente desde MongoDB",
-      data: todosLosVehiculos,
+      data: vehiculos, 
     });
   } catch (error) {
     res.status(500).json({ message: "Error al consultar la colección de vehículos", error: error.message });
@@ -329,7 +344,7 @@ app.get("/api/getVehiculos", async (req, res) => {
 app.post("/api/createVehiculo", async (req, res) => {
   try {
     const { marca, modelo, año, color } = req.body;
-    // Validar propiedades necesarias
+    
     if (!marca || !modelo || !año || !color) {
       return res.status(400).json({ message: "Los campos marca, modelo, año y color son mandatorios en el Body" });
     }
@@ -337,7 +352,9 @@ app.post("/api/createVehiculo", async (req, res) => {
       return res.status(400).json({ message: "El campo 'año' debe ser numérico" });
     }
 
+    // Instanciación del Modelo: Crea un nuevo documento en memoria validando la estructura del Schema
     const nuevoVehiculo = new Vehiculo({ marca, modelo, año, color });
+    // .save(): Operación asíncrona que inserta de forma física el documento en la colección de MongoDB
     await nuevoVehiculo.save();
 
     res.status(201).json({
