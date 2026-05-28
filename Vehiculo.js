@@ -9,7 +9,7 @@ const vehiculoSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  anio: {
+  año: {
     type: Number,
     required: true,
   },
